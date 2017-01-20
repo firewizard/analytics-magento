@@ -1,4 +1,5 @@
 <?php
+
 class WindsorCircle_Analytics_Helper_Data extends Mage_Core_Helper_Abstract
 {
     public function getWriteKey()
@@ -25,26 +26,24 @@ class WindsorCircle_Analytics_Helper_Data extends Mage_Core_Helper_Abstract
     {
         $ids = is_array($ids) ? $ids : array($ids);
         $categories = Mage::getModel('catalog/category')->getCollection()
-        ->addAttributeToSelect('name')
-        ->addFieldToFilter('entity_id', array('in'=>$ids));
+            ->addAttributeToSelect('name')
+            ->addFieldToFilter('entity_id', array('in' => $ids));
 
         $names = array();
-        foreach($categories as $category)
-        {
+        foreach ($categories as $category) {
             $names[] = $category->getName();
         }
         return $names;
     }
 
     /**
-    * Changes standard page titles per segment API.  Hopefully
-    * this is kept to a minimum
-    * @todo refactor if this goes beyond page
-    */
+     * Changes standard page titles per segment API.  Hopefully
+     * this is kept to a minimum
+     * @todo refactor if this goes beyond page
+     */
     public function getNormalizedPageTitle($title)
     {
-        if(strpos($title, $this->__('Search results for')) !== false)
-        {
+        if (strpos($title, $this->__('Search results for')) !== false) {
             $title = 'Search Results';
         }
 
@@ -54,14 +53,12 @@ class WindsorCircle_Analytics_Helper_Data extends Mage_Core_Helper_Abstract
     public function getNormalizedCustomerInformation($data)
     {
         $swap = array(
-            'firstname'=>'first_name',
-            'lastname'=>'last_name');
+            'firstname' => 'first_name',
+            'lastname' => 'last_name');
 
         //nomalize items from $swap
-        foreach($swap as $old=>$new)
-        {
-            if(!array_key_exists($old, $data))
-            {
+        foreach ($swap as $old => $new) {
+            if (!array_key_exists($old, $data)) {
                 continue;
             }
             $data[$new] = $data[$old];
@@ -76,8 +73,7 @@ class WindsorCircle_Analytics_Helper_Data extends Mage_Core_Helper_Abstract
         $to_send = preg_split('%[\n\r]%', $fields, -1, PREG_SPLIT_NO_EMPTY);
 
         $data_final = array();
-        foreach($to_send as $field)
-        {
+        foreach ($to_send as $field) {
             $data_final[$field] = array_key_exists($field, $data) ? $data[$field] : null;
         }
 
@@ -95,75 +91,81 @@ class WindsorCircle_Analytics_Helper_Data extends Mage_Core_Helper_Abstract
         }
 
         //if passed id, load the product
-        if(!is_array($product))
-        {
+        if (!is_array($product)) {
             $product = Mage::getModel('catalog/product_api')->info($product, Mage::app()->getStore());
         }
 
         //calculate revenue, if present
         $product['id'] = $product['product_id'];
-        if(array_key_exists('cost',$product))
-        {
+        if (array_key_exists('cost', $product)) {
             $product['revenue'] = $product['price'] - $product['cost'];
+        }
+
+        $catIds = array();
+        if (isset($product['category_ids'])) {
+            $catIds = (array)$product['category_ids'];
+        } elseif (isset($product['categories'])) {
+            $catIds = (array)$product['categories'];
         }
 
         //ensure category names/labels are sent along
         $categories = Mage::getModel('catalog/category')->getCollection()
-        ->addAttributeToSelect('name')
-        ->addFieldToFilter('entity_id', array('in'=>$product['category_ids']));
-        foreach($categories as $category)
-        {
+            ->addAttributeToSelect('name')
+            ->addFieldToFilter('entity_id', array('in' => $catIds));
+        foreach ($categories as $category) {
             $product['categories'][] = $category->getName();
         }
         $product['categories'] = $this->getCategoryNamesFromIds($product['categories']);
 
         //cast numerics as floats per segment requirements
-        $as_float = array('price','weight');
-        foreach($as_float as $key)
-        {
-            if(!array_key_exists($key, $product)) { continue; }
-            $product[$key] = (float) $product[$key];
+        $as_float = array('price', 'weight');
+        foreach ($as_float as $key) {
+            if (!array_key_exists($key, $product)) {
+                continue;
+            }
+            $product[$key] = (float)$product[$key];
         }
 
         //segments wants "id" not product_id
-        if(array_key_exists('product_id', $product))
-        {
+        if (array_key_exists('product_id', $product)) {
             $product['id'] = $product['product_id'];
             unset($product['product_id']);
         }
 
         $non_negotiables = array(
             "id", "sku", "name", "price", "categories"
-            );
+        );
         $whitelist = trim(Mage::getStoreConfig('windsorcircle_analytics/options/product_properties'));
         $whitelistedFields = preg_split('%[\n\r]%', $whitelist, -1, PREG_SPLIT_NO_EMPTY);
 
-        foreach($product as $key => $value)
-        {
-            if(in_array($key, $whitelistedFields) or in_array($key, $non_negotiables)) { continue; }
+        foreach ($product as $key => $value) {
+            if (in_array($key, $whitelistedFields) or in_array($key, $non_negotiables)) {
+                continue;
+            }
             unset($product[$key]);
         }
 
         $product = $this->getDataCastAsBooleans($product);
-        $product = array_filter($product, function($v, $k) {
+        $product = array_filter($product, function ($v) {
             return !is_null($v);
         });
         return $this->_normalizeDatesToISO8601($product);
     }
 
     /**
-    * Central place for casting of '1' and '0' as boolean
-    * where we know it needs to happen. Segment API requirement
-    */
+     * Central place for casting of '1' and '0' as boolean
+     * where we know it needs to happen. Segment API requirement
+     */
     public function getDataCastAsBooleans($data)
     {
-        $keys_boolean = array('has_options','is_active','customer_is_guest','customer_note_notify',
-        'email_sent','forced_shipment_with_invoice','paypal_ipn_customer_notified','is_virtual',
-        'is_qty_decimal', 'no_discount','is_nominal');
-        foreach($keys_boolean as $key)
-        {
-            if(!array_key_exists($key, $data)) { continue; }
-            $data[$key] = (boolean) $data[$key];
+        $keys_boolean = array('has_options', 'is_active', 'customer_is_guest', 'customer_note_notify',
+            'email_sent', 'forced_shipment_with_invoice', 'paypal_ipn_customer_notified', 'is_virtual',
+            'is_qty_decimal', 'no_discount', 'is_nominal');
+        foreach ($keys_boolean as $key) {
+            if (!array_key_exists($key, $data)) {
+                continue;
+            }
+            $data[$key] = (boolean)$data[$key];
         }
         return $this->_normalizeDatesToISO8601($data);
     }
@@ -171,13 +173,11 @@ class WindsorCircle_Analytics_Helper_Data extends Mage_Core_Helper_Abstract
     protected function _normalizeDatesToISO8601($data)
     {
         $date_fields = array('created_at', 'updated_at');
-        foreach($date_fields as $key)
-        {
-            if(!array_key_exists($key, $data))
-            {
+        foreach ($date_fields as $key) {
+            if (!array_key_exists($key, $data)) {
                 continue;
             }
-            $data[$key] = date(DATE_ISO8601,strToTime($data[$key]));
+            $data[$key] = date(DATE_ISO8601, strToTime($data[$key]));
         }
         return $data;
     }
